@@ -7,7 +7,7 @@ const LayoutDashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="min-h-screen transition-colors duration-500 bg-slate-50 dark:bg-[#0f172a] dark:bg-gradient-to-br dark:from-[#1e3a8a] dark:via-[#1e293b] dark:to-[#0f172a] text-slate-900 dark:text-white">
       {/* Overlay Mobile: Memberikan efek gelap pada konten saat sidebar muncul */}
       {sidebarOpen && (
         <div

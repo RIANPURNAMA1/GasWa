@@ -7,9 +7,17 @@ import {
   Navigate,
 } from "react-router-dom";
 
-import LayoutDashbaord from "./LayoutDashboard";
+import LayoutDashboard from "./LayoutDashboard";
 import InboxView from "./features/InboxView";
 import KirimPesan from "./features/KirimPesan";
+import DashboardView from "./features/DashboardView";
+
+// 1. IMPORT ThemeProvider di sini
+import { ThemeProvider } from "./context/ThemeContext";
+import ChatView from "./features/ChatView";
+import DeviceStatus from "./features/DeviceStatus";
+import QRScanner from "./features/QRScanner";
+import ContactsView from "./features/ContactsView";
 
 const AppContent = () => {
   const location = useLocation();
@@ -23,26 +31,28 @@ const AppContent = () => {
 
   return (
     <>
-      {/* Jika kamu ingin loading spinner muncul secara global, letakkan di sini */}
-      {loading && <div className="fixed top-0 left-0 w-full h-1 bg-green-500 z-[9999]" />}
+      {/* Loading bar yang adaptif terhadap warna tema */}
+      {loading && (
+        <div className="fixed top-0 left-0 w-full h-1 bg-blue-600 dark:bg-blue-400 z-[9999] animate-pulse" />
+      )}
 
       <Routes>
-        {/* 1. Parent Route: LayoutDashboard membungkus Route yang butuh Sidebar/Header */}
-        <Route path="/" element={<LayoutDashbaord />}>
-          
-          {/* Halaman Dashboard Utama (index) */}
-          <Route index element={<div className="p-10">Selamat Datang di Dashboard</div>} />
-
-          {/* 2. Child Routes: Akan merender komponen di dalam <Outlet /> milik Layout */}
+        <Route path="/" element={<LayoutDashboard />}>
+          <Route index element={<DashboardView />} />
           <Route path="inbox" element={<InboxView />} />
-          <Route path="send" element={<KirimPesan/>} />
-          <Route path="contacts" element={<div className="p-10">Halaman Kontak</div>} />
+          <Route path="send" element={<KirimPesan />} />
+          {/* Route baru untuk halaman Chat Riwayat */}
+          <Route path="chat" element={<ChatView />} />
+          <Route path="device" element={<DeviceStatus />} />
+          <Route path="add-device" element={<QRScanner />} />
+          <Route path="contacts" element={<ContactsView />} />
+          <Route
+            path="contacts"
+            element={<div className="p-10">Halaman Kontak</div>}
+          />
         </Route>
 
-        {/* 3. Route di LUAR Layout (Tanpa Sidebar/Header) */}
         <Route path="/login" element={<div>Halaman Login</div>} />
-
-        {/* 404 Redirect */}
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </>
@@ -50,9 +60,12 @@ const AppContent = () => {
 };
 
 const App = () => (
-  <Router>
-    <AppContent />
-  </Router>
+  // 2. BUNGKUS Router dengan ThemeProvider
+  <ThemeProvider>
+    <Router>
+      <AppContent />
+    </Router>
+  </ThemeProvider>
 );
 
 export default App;
