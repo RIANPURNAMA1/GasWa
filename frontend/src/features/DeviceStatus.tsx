@@ -29,6 +29,8 @@ const DeviceStatus: React.FC = () => {
     setTimeout(() => setIsRefreshing(false), 2000); // Simulasi refresh
   };
 
+  
+
   return (
     <div className="p-4 md:p-8 lg:p-12 min-h-screen bg-slate-50 dark:bg-[#0f172a]">
       <div className="max-w-4xl mx-auto">

@@ -7,26 +7,27 @@ import {
   MoreVertical, 
   ExternalLink, 
   Loader2, 
-  X 
+  X,
+  ChevronRight
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 
-// --- Komponen Sub: Baris Kontak Satuan ---
+// --- Komponen Sub: Baris Kontak (Flat Style) ---
 const ContactItem = ({ name, phone, status, initials }: any) => (
-  <div className="flex items-center justify-between p-4 bg-white dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all group shadow-sm">
+  <div className="group flex items-center justify-between p-4 -mx-4 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all border border-transparent hover:border-slate-100 dark:hover:border-slate-800">
     <div className="flex items-center gap-4">
-      {/* Avatar Bulat dengan Inisial */}
-      <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold shadow-lg uppercase">
-        {initials || "???"}
+      {/* Avatar Bulat (Disesuaikan dengan tema Blue-700) */}
+      <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-sm uppercase border border-blue-100 dark:border-blue-800/50">
+        {initials || name.charAt(0)}
       </div>
       <div>
-        <h4 className="text-sm font-semibold text-slate-900 dark:text-white">{name}</h4>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500 dark:text-slate-400">{phone}</span>
-          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+        <h4 className="text-[15px] font-bold text-slate-900 dark:text-white leading-tight">{name}</h4>
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-xs font-mono text-slate-500 dark:text-slate-400">{phone}</span>
+          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter ${
             status === 'Online' 
-            ? "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400" 
-            : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+            ? "bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400" 
+            : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500"
           }`}>
             {status}
           </span>
@@ -34,33 +35,31 @@ const ContactItem = ({ name, phone, status, initials }: any) => (
       </div>
     </div>
     
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
       <button 
         onClick={() => window.open(`https://wa.me/${phone}`, '_blank')}
-        className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+        className="p-2 text-slate-400 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
+        title="Chat WhatsApp"
       >
         <MessageCircle size={18} />
       </button>
-      <button className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors">
+      <button className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg">
         <MoreVertical size={18} />
       </button>
+      <ChevronRight size={18} className="text-slate-300 ml-2" />
     </div>
   </div>
 );
 
-// --- Komponen Utama: ContactsView ---
 const ContactsView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [contacts, setContacts] = useState([]);
   const [stats, setStats] = useState({ total: 0, online: 0 });
   const [loading, setLoading] = useState(true);
-  
-  // State Modal & Form
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newContact, setNewContact] = useState({ name: "", phone: "", status: "Offline" });
   const [submitting, setSubmitting] = useState(false);
 
-  // Ambil data dari Backend
   const fetchContacts = async () => {
     try {
       const response = await fetch(`http://localhost:3000/api/contacts?search=${encodeURIComponent(searchTerm)}`);
@@ -76,15 +75,11 @@ const ContactsView: React.FC = () => {
     }
   };
 
-  // Debounced Search (Fetch hanya saat user berhenti mengetik)
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      fetchContacts();
-    }, 500);
+    const delayDebounceFn = setTimeout(() => { fetchContacts(); }, 500);
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm]);
 
-  // Handler Simpan Data
   const handleAddContact = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -95,173 +90,135 @@ const ContactsView: React.FC = () => {
         body: JSON.stringify(newContact),
       });
       const data = await res.json();
-      
       if (data.success) {
-        toast.success("Kontak berhasil ditambahkan!");
+        toast.success("Kontak disimpan");
         setIsModalOpen(false);
         setNewContact({ name: "", phone: "", status: "Offline" });
-        fetchContacts(); // Refresh list otomatis
-      } else {
-        toast.error(data.message || "Gagal menyimpan kontak");
+        fetchContacts();
       }
     } catch (err) {
-      toast.error("Gagal terhubung ke server");
+      toast.error("Error server");
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0f172a] p-4 md:p-8 transition-colors duration-500">
-      <Toaster position="top-right" />
+    <div className="min-h-screen bg-white dark:bg-[#0f172a] text-slate-900 dark:text-slate-100 transition-colors">
+      <Toaster />
       
-      <div className="max-w-4xl mx-auto">
-        {/* Header Bagian Atas */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Users className="text-blue-500" /> Daftar Kontak
+      {/* HEADER (Sticky & Identik) */}
+      <header className="border-b border-slate-100 dark:border-slate-800 bg-white/80 dark:bg-[#0f172a]/80 backdrop-blur-md sticky top-0 z-40">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-bold text-blue-700 dark:text-blue-500 flex items-center gap-2">
+              Contacts
             </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-              Production Environment • <span className="text-green-500 font-medium italic">MySQL Live Sync</span>
-            </p>
+            <div className="flex items-center gap-4 ml-4 pl-4 border-l border-slate-100 dark:border-slate-800">
+               <div className="text-center">
+                  <span className="block text-[11px] font-black text-blue-700">{stats.total}</span>
+                  <span className="block text-[8px] uppercase tracking-tighter text-slate-400 font-bold">Total</span>
+               </div>
+               <div className="text-center">
+                  <span className="block text-[11px] font-black text-green-500">{stats.online}</span>
+                  <span className="block text-[8px] uppercase tracking-tighter text-slate-400 font-bold">Online</span>
+               </div>
+            </div>
           </div>
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-semibold transition-all shadow-lg shadow-blue-500/20 active:scale-95"
+            className="bg-blue-700 text-white p-2.5 rounded-full hover:bg-blue-800 transition-all shadow-lg shadow-blue-700/20 active:scale-95"
           >
-            <UserPlus size={18} /> Tambah Kontak
+            <UserPlus size={20} />
           </button>
         </div>
+      </header>
 
-        {/* Search Bar & Statistik Ringkas */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="md:col-span-2 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Cari nama atau nomor..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 dark:text-white transition-all shadow-sm"
-            />
-          </div>
-          <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-3 rounded-xl flex items-center justify-around shadow-sm">
-            <div className="text-center">
-              <div className="text-lg font-bold text-slate-900 dark:text-white">{stats.total}</div>
-              <div className="text-[10px] uppercase text-slate-500 font-bold tracking-tighter">Total</div>
-            </div>
-            <div className="w-px h-8 bg-slate-200 dark:bg-slate-800"></div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-green-500">{stats.online}</div>
-              <div className="text-[10px] uppercase text-slate-500 font-bold tracking-tighter">Online</div>
-            </div>
-          </div>
+      <div className="max-w-4xl mx-auto px-6 py-8">
+        {/* Minimalist Search Bar */}
+        <div className="relative mb-10">
+          <Search className="absolute left-0 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
+          <input 
+            type="text" 
+            placeholder="Search by name or phone..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-8 pr-4 py-3 bg-transparent border-b border-slate-100 dark:border-slate-800 outline-none focus:border-blue-700 transition-all text-sm font-medium"
+          />
         </div>
 
-        {/* Modal Popup: Tambah Kontak */}
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-300">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
-                <h3 className="text-lg font-bold dark:text-white">Tambah Kontak Baru</h3>
-                <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
-                  <X size={20}/>
-                </button>
-              </div>
-              
-              <form onSubmit={handleAddContact} className="p-6 space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 ml-1">Nama Lengkap</label>
-                  <input 
-                    required
-                    type="text" 
-                    className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                    placeholder="Contoh: Admin Rian"
-                    value={newContact.name}
-                    onChange={(e) => setNewContact({...newContact, name: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 ml-1">Nomor WhatsApp</label>
-                  <input 
-                    required
-                    type="number" 
-                    className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                    placeholder="628123456789"
-                    value={newContact.phone}
-                    onChange={(e) => setNewContact({...newContact, phone: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 ml-1">Status Awal</label>
-                  <select 
-                    className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl dark:text-white outline-none transition-all cursor-pointer"
-                    value={newContact.status}
-                    onChange={(e) => setNewContact({...newContact, status: e.target.value})}
-                  >
-                    <option value="Offline">Offline</option>
-                    <option value="Online">Online</option>
-                  </select>
-                </div>
-                
-                <div className="flex gap-3 pt-4">
-                  <button 
-                    type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="flex-1 py-3 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-400 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
-                  >
-                    Batal
-                  </button>
-                  <button 
-                    type="submit"
-                    disabled={submitting}
-                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    {submitting ? <Loader2 size={18} className="animate-spin" /> : "Simpan Kontak"}
-                  </button>
-                </div>
-              </form>
+        {/* Contacts List */}
+        <div className="space-y-1">
+          {loading ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="animate-spin text-blue-700" size={32} />
             </div>
-          </div>
-        )}
-
-        {/* Bagian List Kontak */}
-        <div className="space-y-3">
-          <div className="flex justify-between items-center mb-2 px-1">
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-              Database Logs
-            </h3>
-            {loading && <Loader2 size={14} className="animate-spin text-blue-500" />}
-          </div>
-          
-          <div className="min-h-[400px]">
-            {contacts.length > 0 ? (
-              contacts.map((contact: any) => (
-                <div key={contact.id} className="mb-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                  <ContactItem {...contact} />
-                </div>
-              ))
-            ) : !loading && (
-              <div className="text-center py-20 bg-white dark:bg-slate-900/20 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800">
-                <Users className="mx-auto text-slate-300 dark:text-slate-700 mb-4" size={48} />
-                <p className="text-slate-500 dark:text-slate-400 font-medium">Data kontak tidak ditemukan</p>
-                <p className="text-xs text-slate-400 mt-1">Coba kata kunci lain atau tambah kontak baru</p>
-              </div>
-            )}
-          </div>
+          ) : contacts.length > 0 ? (
+            contacts.map((contact: any) => (
+              <ContactItem key={contact.id} {...contact} />
+            ))
+          ) : (
+            <div className="text-center py-24">
+              <Users className="mx-auto text-slate-100 dark:text-slate-800 mb-4" size={64} />
+              <p className="text-slate-400 font-medium italic">No contacts found</p>
+            </div>
+          )}
         </div>
 
-        {/* Footer Sederhana */}
-        <div className="mt-10 pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center text-[11px] text-slate-400 font-medium uppercase tracking-widest">
-          <span>Server: Node.js • MySQL</span>
-          <div className="flex gap-4">
-            <span className="hover:text-blue-500 cursor-pointer flex items-center gap-1 transition-colors">
-              Download CSV <ExternalLink size={12} />
-            </span>
-          </div>
-        </div>
+        {/* Minimalist Footer */}
+        <footer className="mt-20 pt-8 border-t border-slate-50 dark:border-slate-800 flex justify-between items-center">
+           <p className="text-[9px] font-black text-slate-300 uppercase tracking-[0.4em]">MySQL Live Sync Active</p>
+           <button className="text-[10px] font-bold text-blue-700 hover:underline flex items-center gap-1 uppercase tracking-widest">
+             Export CSV <ExternalLink size={12} />
+           </button>
+        </footer>
       </div>
+
+      {/* MODAL (Tambah Kontak) */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-[#1e293b] w-full max-w-sm rounded-md shadow-2xl overflow-hidden p-10 border border-slate-100 dark:border-slate-800 animate-in zoom-in-95">
+            <div className="flex justify-between items-center mb-8">
+              <h2 className="text-xl font-bold tracking-tight">Add Contact</h2>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-red-500">
+                <X size={20}/>
+              </button>
+            </div>
+            
+            <form onSubmit={handleAddContact} className="space-y-8">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Full Name</label>
+                <input 
+                  required
+                  type="text" 
+                  className="w-full bg-transparent border-b-2 border-slate-100 dark:border-slate-800 py-2 outline-none focus:border-blue-700 transition-all font-bold"
+                  placeholder="e.g. John Doe"
+                  value={newContact.name}
+                  onChange={(e) => setNewContact({...newContact, name: e.target.value})}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Phone Number</label>
+                <input 
+                  required
+                  type="number" 
+                  className="w-full bg-transparent border-b-2 border-slate-100 dark:border-slate-800 py-2 outline-none focus:border-blue-700 transition-all font-bold"
+                  placeholder="62812..."
+                  value={newContact.phone}
+                  onChange={(e) => setNewContact({...newContact, phone: e.target.value})}
+                />
+              </div>
+              <button 
+                type="submit"
+                disabled={submitting}
+                className="w-full py-4 bg-blue-700 text-white rounded-md font-bold shadow-xl shadow-blue-700/30 flex items-center justify-center gap-2 active:scale-95 transition-all"
+              >
+                {submitting ? <Loader2 size={18} className="animate-spin" /> : "Save Contact"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

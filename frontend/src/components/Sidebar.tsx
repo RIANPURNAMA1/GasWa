@@ -57,7 +57,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
             </div>
             <div>
               <h1 className="text-lg font-bold text-white tracking-tight">Satu<span className="text-blue-400">Pintu</span></h1>
-              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Multi-Channel</p>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">PT Sukses Mendunia</p>
             </div>
           </div>
           <button onClick={() => setIsOpen(false)} className="lg:hidden text-slate-400">

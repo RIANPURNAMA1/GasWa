@@ -1,224 +1,156 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Search,
   Trash2,
-  Eye,
-  Filter,
-  Clock,
   User,
-  ShieldCheck,
   Inbox,
-  ArrowRightCircle,
-  Download,
+  ArrowRight,
+  Smartphone,
+  RefreshCw,
+  Search,
 } from "lucide-react";
 
 interface Message {
   id: number;
-  text: string;
-  time: string;
-  isMe: boolean;
-  from?: string;
+  device_key: string;
+  received_via: string; // Nama device dari backend (d.device_name)
+  sender: string;
+  message_text: string;
+  is_me: number;
+  received_at: string;
 }
 
 const ProfessionalInbox: React.FC = () => {
   const [allMessages, setAllMessages] = useState<Message[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
 
   const fetchMessages = async () => {
     try {
-      const res = await fetch("http://localhost:3000/all");
+      const res = await fetch("http://localhost:3000/api/messages/all");
       if (res.ok) {
-        const data: Message[] = await res.json();
-        // Hanya ambil pesan masuk untuk ditampilkan di Inbox
-        setAllMessages(data.filter((msg: Message) => !msg.isMe));
+        const result = await res.json();
+        const data: Message[] = result.data || result;
+        setAllMessages(data);
       }
     } catch (err) {
       console.error("Gagal ambil pesan:", err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
     fetchMessages();
-    const interval = setInterval(fetchMessages, 5000);
+    const interval = setInterval(fetchMessages, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  const handleOpenChat = (phoneNumber: string) => {
-    // Bersihkan nomor dari karakter non-digit
-    const cleanNumber = phoneNumber.split("@")[0].replace(/\D/g, "");
+  // LOGIKA GROUPING MULTI-DEVICE
+  const chatList = useMemo(() => {
+    const groups: Record<string, Message> = {};
 
-    // Arahkan ke route chat/balas (sesuaikan path dengan route di App.tsx Anda)
-    navigate("/chat", { state: { replyTo: cleanNumber } });
+    // Sort ID terkecil ke terbesar agar pesan terakhir yang menimpa
+    const sortedByID = [...allMessages].sort((a, b) => a.id - b.id);
+
+    sortedByID.forEach((msg) => {
+      // KUNCI UNIK: Nomor Pengirim + Device Key
+      // Ini mencegah chat dari device berbeda bercampur jadi satu baris
+      const groupKey = `${msg.sender}_${msg.device_key}`;
+      groups[groupKey] = msg;
+    });
+
+    return Object.values(groups).sort(
+      (a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime()
+    );
+  }, [allMessages]);
+
+  const handleOpenChat = (msg: Message) => {
+    navigate("/chat", {
+      state: {
+        sender: msg.sender,
+        deviceKey: msg.device_key, // Kirim device_key spesifik
+      },
+    });
   };
 
-  const deleteLog = (e: React.MouseEvent, id: number) => {
-    e.stopPropagation(); // Mencegah navigasi terbuka saat klik hapus
-    if (window.confirm("Hapus log pesan ini?")) {
-      // Tambahkan logic fetch DELETE di sini jika diperlukan
-      setAllMessages((prev) => prev.filter((m) => m.id !== id));
-    }
-  };
-
-  const filteredMessages = allMessages.filter(
-    (msg) =>
-      (msg.from || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      msg.text.toLowerCase().includes(searchTerm.toLowerCase()),
+  const filteredMessages = chatList.filter(
+    (m) =>
+      m.sender.includes(searchTerm) ||
+      m.message_text.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
-    <div className="p-4 md:p-8 lg:p-12 transition-colors duration-500 min-h-screen bg-slate-50 dark:bg-slate-900/40">
-      <div className="max-w-6xl mx-auto">
-        {/* Header Section */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-6">
+    <div className="min-h-screen bg-[#f8fafc] dark:bg-[#0b1120] font-sans antialiased text-slate-900 dark:text-slate-100">
+      <div className="max-w-4xl mx-auto px-4 py-10">
+        
+        <header className="flex items-center justify-between mb-8">
           <div>
-            <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-black text-[10px] tracking-[0.2em] uppercase mb-2">
-              <ShieldCheck size={14} />
-              <span>Security Verified Gateway</span>
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
-              Kotak{" "}
-              <span className="text-blue-600 dark:text-blue-400">Masuk</span>
-            </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-1">
-              Klik pada pesan untuk melihat riwayat percakapan lengkap.
+            <h1 className="text-2xl font-bold tracking-tight">WhatsApp Inbox</h1>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
+              Multi-Device Messenger System
             </p>
           </div>
+          <button
+            onClick={() => { setIsLoading(true); fetchMessages(); }}
+            className="p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm"
+          >
+            <RefreshCw size={20} className={isLoading ? "animate-spin text-blue-500" : "text-slate-500"} />
+          </button>
+        </header>
 
-          <div className="bg-white dark:bg-slate-900/40 p-4 rounded-md border border-slate-200 dark:border-white/10 shadow-sm flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-[10px] uppercase font-black text-slate-400 tracking-widest">
-                Total Pesan
-              </p>
-              <p className="text-2xl font-black text-blue-600 dark:text-green-400 leading-none">
-                {filteredMessages.length}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-500/10 flex items-center justify-center text-blue-600">
-              <Inbox size={20} />
-            </div>
-          </div>
+        <div className="relative mb-6">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+          <input
+            type="text"
+            placeholder="Cari nomor atau pesan..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-12 pr-4 py-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500"
+          />
         </div>
 
-        {/* Action Bar */}
-        <div className="bg-white dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200 dark:border-white/10 rounded-md p-2 mb-8 flex flex-wrap items-center gap-2 shadow-xl shadow-slate-200/50 dark:shadow-none">
-          <div className="relative flex-1 min-w-[280px]">
-            <Search
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-              size={18}
-            />
-            <input
-              type="text"
-              placeholder="Cari pengirim atau isi pesan..."
-              className="w-full bg-transparent border-none py-3 pl-12 pr-4 focus:ring-0 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 font-medium"
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <button className="flex items-center gap-2 px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl transition text-xs font-bold uppercase tracking-wider">
-            <Filter size={16} /> Filter
-          </button>
-          <button className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-md text-xs font-black transition-all active:scale-95 shadow-lg shadow-blue-500/30 uppercase tracking-widest">
-            <Download size={16} /> Export
-          </button>
-        </div>
-
-        {/* Logs List */}
-        <div className="space-y-4">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
           {filteredMessages.length > 0 ? (
-            filteredMessages.map((msg) => (
-              <div
-                key={msg.id}
-                onClick={() => handleOpenChat(msg.from || "")} // KLIK PADA CARD UNTUK KE CHAT
-                className="group cursor-pointer relative bg-white dark:bg-slate-900/30 backdrop-blur-sm border border-slate-200 dark:border-white/5 rounded-md p-5 hover:shadow-xl hover:shadow-blue-500/10 dark:hover:bg-slate-800/40 hover:border-blue-500/40 transition-all duration-300"
-              >
-                <div className="flex flex-col md:flex-row md:items-center gap-6">
-                  {/* Sender Info */}
-                  <div className="flex items-center gap-4 md:w-1/4 shrink-0">
-                    <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-blue-500/10 border border-slate-200 dark:border-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:rotate-6 transition-transform">
-                      <User size={20} />
-                    </div>
-                    <div className="overflow-hidden">
-                      <p className="text-[10px] font-black text-slate-400 dark:text-blue-400 uppercase tracking-widest mb-0.5">
-                        Pengirim
-                      </p>
-                      <p className="text-sm font-bold text-slate-900 dark:text-slate-200 truncate">
-                        {msg.from || "Unknown"}
-                      </p>
-                    </div>
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {filteredMessages.map((msg) => (
+                <div
+                  key={`${msg.sender}_${msg.device_key}`}
+                  onClick={() => handleOpenChat(msg)}
+                  className="group flex items-center gap-4 p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-all"
+                >
+                  <div className="w-12 h-12 shrink-0 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                    <User size={24} />
                   </div>
 
-                  {/* Message Preview */}
-                  <div className="flex-1 md:border-l border-slate-100 dark:border-white/5 md:pl-6">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[9px] font-black bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded uppercase tracking-tighter">
-                        Text Message
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-baseline mb-1">
+                      <h3 className="font-bold text-[15px] truncate">{msg.sender}</h3>
+                      <span className="text-[11px] text-slate-400">
+                        {new Date(msg.received_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed font-medium line-clamp-2 group-hover:text-slate-900 dark:group-hover:text-slate-200 transition-colors">
-                      {msg.text}
+
+                    <p className="text-[13px] text-slate-500 dark:text-slate-400 line-clamp-1 mb-2">
+                      {msg.is_me === 1 && <span className="text-indigo-500">Anda: </span>}
+                      {msg.message_text}
                     </p>
-                  </div>
 
-                  {/* Meta & Interactive Actions */}
-                  <div className="flex items-center justify-between md:flex-col md:items-end md:justify-center gap-4 md:w-1/5 shrink-0 border-t md:border-t-0 border-slate-50 pt-4 md:pt-0">
-                    <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
-                      <Clock size={14} />
-                      <span className="text-xs font-bold font-mono">
-                        {msg.time.includes(" ")
-                          ? msg.time.split(" ")[1]
-                          : msg.time}
+                    <div className="flex">
+                      <span className="flex items-center gap-1 text-[9px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-100 dark:border-emerald-500/20 uppercase">
+                        <Smartphone size={10} />
+                        Receiver: {msg.received_via || "Unknown Device"}
                       </span>
                     </div>
-
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenChat(msg.from || "");
-                        }}
-                        title="Lihat Detail"
-                        className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-xl transition-all"
-                      >
-                        <Eye size={18} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenChat(msg.from || "");
-                        }}
-                        title="Balas Pesan"
-                        className="p-2.5 text-slate-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-500/10 rounded-xl transition-all"
-                      >
-                        <ArrowRightCircle size={18} />
-                      </button>
-                      <button
-                        onClick={(e) => deleteLog(e, msg.id)}
-                        title="Hapus Log"
-                        className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
                   </div>
+                  
+                  <ArrowRight size={18} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
-              </div>
-            ))
-          ) : (
-            <div className="flex flex-col items-center justify-center py-32 bg-white dark:bg-slate-900/20 border-2 border-dashed border-slate-200 dark:border-white/5 rounded-[2.5rem]">
-              <div className="w-20 h-20 bg-slate-50 dark:bg-slate-800/50 rounded-full flex items-center justify-center mb-6">
-                <Inbox
-                  size={40}
-                  className="text-slate-300 dark:text-slate-700"
-                />
-              </div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                Tidak Ada Pesan
-              </h3>
-              <p className="text-sm text-slate-500 dark:text-slate-500 mt-1">
-                Belum ada log pesan masuk yang terdeteksi sistem.
-              </p>
+              ))}
             </div>
+          ) : (
+            <div className="py-20 text-center text-slate-400">Tidak ada pesan.</div>
           )}
         </div>
       </div>

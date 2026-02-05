@@ -1,27 +1,28 @@
 import React, { useState, useEffect } from "react";
 import {
-  QrCode,
   Smartphone,
   RefreshCw,
   CheckCircle,
   Plus,
+  Copy,
   X,
   LogOut,
   Trash2,
-  Info,
-  RotateCw,
+  Loader2,
+  ChevronRight,
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
 
 const UnifiedDeviceManager: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [name, setName] = useState("");
   const [scanStatus, setScanStatus] = useState("default");
   const [qrBase64, setQrBase64] = useState("");
-
-  const [newDeviceKey, setNewDeviceKey] = useState("");
   const [devices, setDevices] = useState<any[]>([]);
   const [loadingList, setLoadingList] = useState(true);
+  const MySwal = withReactContent(Swal);
 
   const fetchAllDevices = async () => {
     setLoadingList(true);
@@ -35,272 +36,345 @@ const UnifiedDeviceManager: React.FC = () => {
       setLoadingList(false);
     }
   };
-  const handleGenerateQR = async () => {
-    if (!name) return alert("Nama device isi dulu");
 
+  const handleGenerateQR = async () => {
+    if (!name) return toast.error("Isi nama perangkat dahulu");
     try {
       setScanStatus("loading");
-
       const res = await fetch("http://localhost:3000/device/add-scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          deviceName: name, // ⚠️ HARUS deviceName, bukan name
-        }),
+        body: JSON.stringify({ deviceName: name }),
       });
-
       const data = await res.json();
-      console.log("RESP BACKEND:", data);
-
       if (!data.success) {
-        alert(data.message);
+        toast.error(data.message);
         setScanStatus("default");
         return;
       }
-
-      // ✅ Ambil QR dari backend
+      fetchAllDevices();
       setQrBase64(data.qrCode);
       setScanStatus("scanning");
     } catch (err) {
-      console.error(err);
-      alert("Server error");
+      toast.error("Server error");
       setScanStatus("default");
     }
   };
 
- useEffect(() => {
-  fetchAllDevices();
-  let interval: any;
+  // Di dalam komponen Dashboard/Device kamu:
+  const handleDeleteDevice = async (
+    deviceId: number | string,
+    deviceName: string,
+  ) => {
+    // 1. Tampilkan Dialog Konfirmasi
+    const result = await MySwal.fire({
+      title: <p className="text-lg font-bold">Hapus Device?</p>,
+      html: (
+        <p className="text-sm">
+          Apakah Anda yakin ingin menghapus <b>{deviceName}</b>? Data ini tidak
+          bisa dipulihkan.
+        </p>
+      ),
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#ef4444", // warna merah tailwind
+      cancelButtonColor: "#64748b", // warna slate tailwind
+      confirmButtonText: "Ya, Hapus!",
+      cancelButtonText: "Batal",
+      background: document.documentElement.classList.contains("dark")
+        ? "#0f172a"
+        : "#ffffff",
+      color: document.documentElement.classList.contains("dark")
+        ? "#f1f5f9"
+        : "#1e293b",
+    });
 
-  if (scanStatus === "scanning") {
-    interval = setInterval(async () => {
+    // 2. Jika user menekan "Ya"
+    if (result.isConfirmed) {
       try {
-        // 1. Paksa backend sync dari StarSender ke Database kita
-        await fetch("http://localhost:3000/device/sync");
+        // Tampilkan loading toast saat proses
+        MySwal.fire({
+          title: "Mohon Tunggu...",
+          allowOutsideClick: false,
+          didOpen: () => {
+            Swal.showLoading();
+          },
+        });
 
-        // 2. Ambil ulang semua data device terbaru dari database
-        const res = await fetch("http://localhost:3000/device/all");
-        const data = await res.json();
+        const response = await fetch(
+          `http://localhost:3000/device/delete/${deviceId}`,
+          {
+            method: "POST",
+          },
+        );
+        const data = await response.json();
 
         if (data.success) {
-          setDevices(data.devices);
-
-          // 3. Cari device yang sedang di-scan
-          // Gunakan toLowerCase() untuk menghindari error typo huruf besar
-          const found = data.devices.find(
-            (d: any) =>
-              (d.device_name === name || d.name === name) && 
-              d.status.toLowerCase() === "connected"
-          );
-
-          if (found) {
-            console.log("Device ditemukan dan terhubung!");
-            setScanStatus("connected"); // Ini akan merubah UI modal ke CheckCircle
-            
-            toast.success(`Device ${name} berhasil terhubung!`, {
-              position: "top-center",
-            });
-
-            // Beri jeda 2 detik agar user bisa melihat icon sukses sebelum modal tutup
-            setTimeout(() => {
-              setIsModalOpen(false);
-              setScanStatus("default");
-              setName("");
-              fetchAllDevices(); // Refresh list terakhir
-            }, 2000);
-
-            clearInterval(interval);
-          }
+          // Toast Sukses
+          MySwal.fire({
+            icon: "success",
+            title: "Terhapus!",
+            text: "Device berhasil dihapus dari sistem.",
+            timer: 2000,
+            showConfirmButton: false,
+          });
+          fetchAllDevices();
+          // Panggil fungsi refresh list device kamu di sini
+          // Contoh: fetchDevices();
+        } else {
+          throw new Error(data.message);
         }
-      } catch (err) {
-        console.error("Polling sync error:", err);
+      } catch (err: any) {
+        MySwal.fire({
+          icon: "error",
+          title: "Gagal!",
+          text: err.message || "Terjadi kesalahan koneksi.",
+        });
       }
-    }, 5000); // Polling setiap 5 detik
-  }
+    }
+  };
 
-  return () => clearInterval(interval);
-}, [scanStatus, name]);
+  useEffect(() => {
+    fetchAllDevices();
+    let interval: any;
+
+    if (scanStatus === "scanning") {
+      interval = setInterval(async () => {
+        try {
+          // 1. Cek status ke server (Gunakan endpoint All atau Status)
+          const res = await fetch("http://localhost:3000/device/all");
+          const data = await res.json();
+
+          if (data.success) {
+            // Cari apakah device yang sedang di-scan sudah "Connected"
+            const found = data.devices.find(
+              (d: any) =>
+                (d.device_name === name || d.name === name) &&
+                d.status.toLowerCase() === "connected",
+            );
+
+            if (found) {
+              // BERHENTI POLLING
+              clearInterval(interval);
+
+              // 2. OTOMATIS SYNC (Hanya sekali saja saat baru connect)
+              // Ini akan mengambil nomor HP dari StarSender ke DB Lokal
+              await fetch("http://localhost:3000/device/sync");
+
+              // 3. Update UI
+              setScanStatus("connected");
+              toast.success(`Device ${name} Terhubung & Disinkronkan!`);
+
+              setTimeout(() => {
+                setIsModalOpen(false);
+                setScanStatus("default");
+                setName("");
+                fetchAllDevices(); // Refresh list terakhir untuk memunculkan nomor HP
+              }, 2500);
+            }
+          }
+        } catch (err) {
+          console.error("Polling error:", err);
+        }
+      }, 5000); // Cek setiap 5 detik
+    }
+
+    return () => clearInterval(interval);
+  }, [scanStatus, name]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    toast.success(`Disalin ke clipboard!`);
+    toast.success(`Key disalin`);
   };
 
   return (
-    <div className="p-8 bg-slate-50 dark:bg-slate-900/40 min-h-screen font-sans">
-      <Toaster position="top-right" />
+    <div className="min-h-screen bg-white dark:bg-[#0f172a] text-slate-900 dark:text-slate-100 transition-colors">
+      <Toaster />
 
-      {/* HEADER */}
-      <div className="max-w-7xl mx-auto flex justify-between items-center mb-10">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
-            WhatsApp <span className="text-indigo-600">Manager</span>
+      {/* HEADER (Sesuai InboxView) */}
+      <header className="border-b border-slate-100 dark:border-slate-800 bg-white/80 dark:bg-[#0f172a]/80 backdrop-blur-md sticky top-0 z-40">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+          <h1 className="text-xl font-bold text-blue-700 dark:text-blue-500 flex items-center gap-2">
+            Devices
+            <span className="text-[10px] bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full font-bold uppercase tracking-widest border border-blue-100 dark:border-blue-800">
+              {devices.length} Active
+            </span>
           </h1>
-          <p className="text-slate-500 text-sm font-medium italic">
-            Manajemen multi-device dalam satu pintu.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={fetchAllDevices}
-            className="p-3 bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-white/5 hover:scale-105 transition-transform"
-          >
-            <RefreshCw
-              size={20}
-              className={loadingList ? "animate-spin text-indigo-500" : ""}
-            />
-          </button>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-500/30 transition-all active:scale-95"
-          >
-            <Plus size={20} /> Add Device
-          </button>
-        </div>
-      </div>
-
-      {/* GRID DEVICE */}
-      <div className="max-w-7xl mx-auto grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {loadingList
-          ? [1, 2].map((i) => (
-              <div
-                key={i}
-                className="h-48 bg-slate-200 dark:bg-slate-800 animate-pulse rounded-2xl"
+          <div className="flex items-center gap-2">
+            <button
+              onClick={fetchAllDevices}
+              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
+            >
+              <RefreshCw
+                size={18}
+                className={
+                  loadingList ? "animate-spin text-blue-700" : "text-slate-400"
+                }
               />
-            ))
-          : devices.map((device) => (
+            </button>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="bg-blue-700 text-white p-2 rounded-full hover:bg-blue-800 transition-all shadow-lg shadow-blue-700/20"
+            >
+              <Plus size={20} />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-4xl mx-auto px-6 py-8">
+        {/* LIST DEVICE (Flat Design) */}
+        <div className="space-y-1">
+          {loadingList ? (
+            <div className="flex flex-col items-center py-20 text-slate-400 gap-3">
+              <Loader2 className="animate-spin" size={32} />
+              <p className="text-xs font-bold uppercase tracking-widest">
+                Loading Devices...
+              </p>
+            </div>
+          ) : (
+            devices.map((device) => (
               <div
                 key={device.id}
-                className="bg-white dark:bg-[#1e293b] rounded-2xl border dark:border-white/5 shadow-sm overflow-hidden flex flex-col md:flex-row transition-all hover:shadow-md"
+                className="group flex flex-col md:flex-row md:items-center gap-4 p-4 -mx-4 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all border border-transparent hover:border-slate-100 dark:hover:border-slate-800"
               >
-                {/* SISI KIRI: INFO DEVICE */}
-                <div className="p-6 flex-grow border-b md:border-b-0 md:border-r dark:border-white/5">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`p-2 rounded-lg ${
-                          device.status === "Connected"
-                            ? "bg-green-500/10 text-green-500"
-                            : "bg-red-500/10 text-red-500"
-                        }`}
-                      >
-                        <Smartphone size={20} />
-                      </div>
-                      <div>
-                        <h3 className="font-bold dark:text-white text-lg flex items-center gap-2">
-                          {device.name}
-                          <span className="text-[9px] bg-indigo-500/10 text-indigo-500 px-2 py-0.5 rounded-full uppercase">
-                            Multidevice
-                          </span>
-                        </h3>
-                        <p className="text-xs text-slate-400 font-mono">
-                          {device.number}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* BADGE STATUS */}
-                    <span
-                      className={`text-[10px] font-black px-3 py-1 rounded-md uppercase tracking-tighter ${
-                        device.status === "Connected"
-                          ? "bg-green-500 text-white"
-                          : "bg-red-500 text-white"
-                      }`}
-                    >
-                      {device.status === "Connected"
-                        ? "Terkoneksi"
-                        : "Tidak Terkoneksi"}
-                    </span>
+                {/* Icon & Name */}
+                <div className="flex items-center gap-4 flex-1">
+                  <div
+                    className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+                      device.status === "Connected"
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                        : "bg-slate-100 text-slate-400 dark:bg-slate-800"
+                    }`}
+                  >
+                    <Smartphone size={24} />
                   </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-[15px] truncate">
+                        {device.name}
+                      </h3>
+                      <div
+                        className={`w-2 h-2 rounded-full ${device.status === "Connected" ? "bg-green-500" : "bg-slate-300"}`}
+                      />
+                    </div>
+                    <p className="text-[12px] text-slate-500 font-mono">
+                      {device.number || "Not Registered"}
+                    </p>
+                  </div>
+                </div>
 
-                  {/* API KEY SECTION */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border dark:border-white/5">
-                      <code className="text-[10px] text-indigo-400 truncate w-40 font-mono">
-                        {device.apiKey}
+                {/* API Info */}
+                <div className="flex flex-wrap items-center gap-4 md:px-4">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
+                      API Key
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <code className="text-[10px] text-blue-600 font-mono bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">
+                        {device.apiKey?.substring(0, 8)}...
                       </code>
                       <button
-                        onClick={() => copyToClipboard(device.apiKey)} // Cukup satu argumen
-                        className="text-[10px] font-bold bg-white dark:bg-slate-800 border dark:border-white/10 px-3 py-1 rounded shadow-sm hover:bg-slate-50 text-slate-600 dark:text-slate-300"
+                        onClick={() => copyToClipboard(device.apiKey)}
+                        className="text-slate-300 hover:text-blue-700 transition-colors"
                       >
-                        Copy
+                        <Copy size={12} />
                       </button>
                     </div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase ml-1">
-                      Server ID: {device.server}
-                    </div>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
+                      Server
+                    </span>
+                    <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 italic">
+                      {device.server}
+                    </span>
                   </div>
                 </div>
 
-                {/* SISI KANAN: ACTION BUTTONS */}
-                {/* RIGHT: ACTIONS */}
-                <div className="p-4 bg-slate-50/50 dark:bg-black/10 flex md:flex-col gap-2 min-w-[140px] justify-center">
-                  <button className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-pink-500 text-white rounded-lg text-xs font-bold hover:bg-pink-600 transition-all uppercase">
-                    <RefreshCw size={14} /> Relog
+                {/* Actions */}
+                <div className="flex items-center gap-2">
+                  <button
+                    className="p-2 text-slate-400 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
+                    title="Relog"
+                  >
+                    <RefreshCw size={16} />
                   </button>
-                  <button className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-500 text-white rounded-lg text-xs font-bold hover:bg-blue-600 transition-all uppercase">
-                    <LogOut size={14} /> Logout
+                  <button
+                    onClick={() => handleDeleteDevice(device.id, device.name)}
+                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                    title="Hapus"
+                  >
+                    <Trash2 size={16} />
                   </button>
-
-                  <button className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-500 text-white rounded-lg text-xs font-bold hover:bg-red-600 transition-all uppercase">
-                    <Trash2 size={14} /> Hapus
-                  </button>
+                  <ChevronRight
+                    size={18}
+                    className="text-slate-200 group-hover:text-blue-700 transition-all"
+                  />
                 </div>
               </div>
-            ))}
+            ))
+          )}
+        </div>
       </div>
 
-      {/* MODAL (Tetap rapi) */}
+      {/* MODAL (Simple & Professional) */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md">
-          <div className="bg-white dark:bg-[#1e293b] w-full max-w-sm rounded-md shadow-2xl relative overflow-hidden p-8">
-            <button
-              onClick={() => setIsModalOpen(false)}
-              className="absolute top-6 right-6 text-slate-400 hover:text-white"
-            >
-              <X size={20} />
-            </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-[#1e293b] w-full max-w-sm rounded-md shadow-2xl overflow-hidden p-8 border border-slate-200 dark:border-slate-800 transition-all">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-lg font-bold">New Connection</h2>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="text-slate-400 hover:text-red-500 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
             {scanStatus === "scanning" ? (
-              <div className="text-center space-y-6">
-                <h2 className="text-xl font-bold dark:text-white">
-                  Scan QR Code
-                </h2>
-                <div className="bg-white p-3 rounded-2xl border-4 border-slate-100 inline-block shadow-inner">
+              <div className="text-center space-y-6 py-4">
+                <div className="bg-white p-4 rounded-3xl border border-slate-100 inline-block shadow-sm">
                   <img src={qrBase64} alt="QR" className="w-48 h-48" />
                 </div>
-                <p className="text-sm text-slate-500 animate-pulse">
-                  Menunggu koneksi dari HP...
-                </p>
+                <div className="flex flex-col items-center gap-2">
+                  <Loader2 className="animate-spin text-blue-700" size={20} />
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">
+                    Waiting for Scan...
+                  </p>
+                </div>
               </div>
             ) : scanStatus === "connected" ? (
-              <div className="text-center py-10">
-                <CheckCircle
-                  size={64}
-                  className="text-green-500 mx-auto mb-4"
-                />
-                <h2 className="text-2xl font-black dark:text-white">Sukses!</h2>
-                <p className="text-slate-500">Device {name} siap digunakan.</p>
+              <div className="text-center py-10 space-y-4">
+                <div className="w-20 h-20 bg-green-50 dark:bg-green-500/10 rounded-full flex items-center justify-center mx-auto">
+                  <CheckCircle size={48} className="text-green-500" />
+                </div>
+                <h2 className="text-xl font-black">Connected!</h2>
               </div>
             ) : (
-              <div className="space-y-4 pt-4">
-                <h2 className="text-xl font-bold dark:text-white text-center">
-                  Tambah Device Baru
-                </h2>
-                <input
-                  type="text"
-                  placeholder="Nama Device (Contoh: Admin_1)"
-                  className="w-full p-4 rounded-xl border dark:bg-slate-900 dark:border-white/10 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Device Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. CS_Admin_1"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border-b-2 border-slate-200 dark:border-slate-800 p-3 outline-none focus:border-blue-700 transition-all font-bold"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </div>
                 <button
                   onClick={handleGenerateQR}
                   disabled={scanStatus === "loading"}
-                  className="w-full py-4 bg-indigo-600 text-white rounded-md font-bold shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+                  className="w-full py-4 bg-blue-700 text-white rounded-md font-bold shadow-lg shadow-blue-700/20 active:scale-95 transition-all flex items-center justify-center gap-2"
                 >
-                  {scanStatus === "loading"
-                    ? "Generating..."
-                    : "Generate QR Code"}
+                  {scanStatus === "loading" ? (
+                    <Loader2 className="animate-spin" size={18} />
+                  ) : (
+                    "Generate QR Code"
+                  )}
                 </button>
               </div>
             )}
