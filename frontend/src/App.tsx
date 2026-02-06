@@ -18,6 +18,7 @@ import ChatView from "./features/ChatView";
 import DeviceStatus from "./features/DeviceStatus";
 import QRScanner from "./features/QRScanner";
 import ContactsView from "./features/ContactsView";
+import Login from "./auth/Login";
 
 const AppContent = () => {
   const location = useLocation();
@@ -52,7 +53,7 @@ const AppContent = () => {
           />
         </Route>
 
-        <Route path="/login" element={<div>Halaman Login</div>} />
+        <Route path="/login" element={<Login/>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </>

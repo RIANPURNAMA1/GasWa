@@ -65,28 +65,28 @@ const DashboardView: React.FC = () => {
   const [messages, setMessages] = useState<any[]>([]);
 
   // Fungsi Fetch Data dari Backend
-const fetchLiveMessages = async () => {
-  try {
-    // Tambahkan parameter device ke URL
-    const url = new URL("http://localhost:3000/api/messages/all");
-    if (selectedDevice !== "Semua Device") {
-      url.searchParams.append("device", selectedDevice);
-    }
+  const fetchLiveMessages = async () => {
+    try {
+      // Tambahkan parameter device ke URL
+      const url = new URL("http://localhost:3000/api/messages/all");
+      if (selectedDevice !== "Semua Device") {
+        url.searchParams.append("device", selectedDevice);
+      }
 
-    const response = await fetch(url.toString());
-    const result = await response.json();
-    
-    if (result.success) {
-      const incomingOnly = result.data
-        .filter((chat: any) => chat.is_me === 0 || chat.is_me === false) 
-        .slice(0, 15);
+      const response = await fetch(url.toString());
+      const result = await response.json();
 
-      setMessages(incomingOnly);
+      if (result.success) {
+        const incomingOnly = result.data
+          .filter((chat: any) => chat.is_me === 0 || chat.is_me === false)
+          .slice(0, 15);
+
+        setMessages(incomingOnly);
+      }
+    } catch (error) {
+      console.error("Gagal sinkronisasi chat:", error);
     }
-  } catch (error) {
-    console.error("Gagal sinkronisasi chat:", error);
-  }
-};
+  };
 
   // Fungsi Fetch Stats & Devices
   const fetchStats = async () => {
@@ -110,30 +110,30 @@ const fetchLiveMessages = async () => {
       setLoading(false);
     }
   };
-// 1. HAPUS useEffect yang lama (yang ada interval 5000 dan array kosong [])
-// 2. GANTI dengan ini:
+  // 1. HAPUS useEffect yang lama (yang ada interval 5000 dan array kosong [])
+  // 2. GANTI dengan ini:
 
-useEffect(() => {
-  // Panggil langsung saat filter berubah
-  fetchLiveMessages();
-  fetchStats();
-
-  // Buat interval untuk Chat Feed (Cepat: 5 detik)
-  const messageInterval = setInterval(() => {
+  useEffect(() => {
+    // Panggil langsung saat filter berubah
     fetchLiveMessages();
-  }, 5000);
-
-  // Buat interval untuk Statistik Card (Lebih lambat: 30 detik agar hemat resource)
-  const statsInterval = setInterval(() => {
     fetchStats();
-  }, 30000);
 
-  // Bersihkan KEDUA interval saat filter berubah atau pindah halaman
-  return () => {
-    clearInterval(messageInterval);
-    clearInterval(statsInterval);
-  };
-}, [activeFilter, selectedDevice]); // <-- Ini kuncinya agar filter device langsung ngefek
+    // Buat interval untuk Chat Feed (Cepat: 5 detik)
+    const messageInterval = setInterval(() => {
+      fetchLiveMessages();
+    }, 5000);
+
+    // Buat interval untuk Statistik Card (Lebih lambat: 30 detik agar hemat resource)
+    const statsInterval = setInterval(() => {
+      fetchStats();
+    }, 30000);
+
+    // Bersihkan KEDUA interval saat filter berubah atau pindah halaman
+    return () => {
+      clearInterval(messageInterval);
+      clearInterval(statsInterval);
+    };
+  }, [activeFilter, selectedDevice]); // <-- Ini kuncinya agar filter device langsung ngefek
 
   if (loading)
     return (

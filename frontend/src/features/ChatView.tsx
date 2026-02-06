@@ -101,7 +101,7 @@ const ChatView: React.FC = () => {
       {/* Chat Area dengan Background Pattern */}
       <main className="flex-1 overflow-y-auto p-4 space-y-3 relative custom-scrollbar">
         {/* Dekorasi Background WhatsApp (Opsional) */}
-        <div className="absolute inset-0 opacity-[0.06] dark:opacity-[0.03] pointer-events-none bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat"></div>
+        <div className="absolute inset-0 opacity-[0.06] dark:opacity-[0.03] pointer-events-none "></div>
 
         <div className="relative z-10 space-y-3">
           {history.map((msg) => (
