@@ -3,6 +3,7 @@ const axios = require("axios");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const mysql = require("mysql2");
+const db = require("./config/db");
 
 const app = express();
 app.use(bodyParser.json());
@@ -14,23 +15,6 @@ const API_KEY = "8eedad2c-ad5a-4123-b682-25b103b08fc9";
 const API_KEY_AKUN = "f272bd85-1ea1-4bcc-9d88-b585b2bda634";
 const PORT = 3000;
 
-// ===============================
-// 🔹 KONFIGURASI DATABASE MYSQL
-// ===============================
-const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "",
-  database: "wa_gateway",
-});
-
-db.connect((err) => {
-  if (err) {
-    console.error("❌ Gagal koneksi Database:", err.message);
-    return;
-  }
-  console.log("✅ Terkoneksi ke Database MySQL");
-});
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -186,55 +170,55 @@ app.get("/device/all", async (req, res) => {
 });
 
 
-// ===============================
-// 🔹 FEATURE: DELETE DEVICE
-// ===============================
 app.post("/device/delete/:id", async (req, res) => {
   const deviceId = req.params.id;
+  console.log("Memproses hapus untuk ID:", deviceId);
 
   try {
-    // 1. Kirim permintaan hapus ke StarSender
-    // Sesuai dokumentasi: POST https://api.starsender.online/api/devices/{id}/delete
-    const response = await axios.post(
-      `https://api.starsender.online/api/devices/${deviceId}/delete`,
-      {}, // Body kosong sesuai docs
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": API_KEY_AKUN, // Menggunakan API KEY Akun anda
-        },
-      }
+    // 1. Coba hapus di StarSender (Cloud)
+    // Kita bungkus try-catch internal supaya kalau Cloud gagal, lokal tetap lanjut hapus
+    try {
+      await axios.post(
+        `https://api.starsender.online/api/devices/${deviceId}/delete`,
+        {},
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": API_KEY_AKUN,
+          },
+        }
+      );
+      console.log("✅ Terhapus di StarSender Cloud");
+    } catch (apiErr) {
+      console.warn("⚠️ Gagal di StarSender Cloud (mungkin sudah terhapus), lanjut hapus lokal...");
+    }
+
+    // 2. EKSEKUSI HAPUS DI MYSQL LOKAL
+    // Kita gunakan ID (Primary Key)
+    const [result] = await db.promise().query(
+      "DELETE FROM devices WHERE id = ?", 
+      [deviceId]
     );
 
-    console.log(`🗑️ StarSender Delete Response:`, response.data);
-
-    if (response.data.success) {
-      // 2. Jika sukses di StarSender, hapus juga di Database Lokal MySQL
-      // Kita gunakan ID dari StarSender untuk mencocokkan di DB (asumsi anda menyimpan ID tersebut)
-      // Jika di DB anda menggunakan device_key sebagai primary, sesuaikan query-nya.
-      await db.promise().query(
-        "DELETE FROM devices WHERE id = ?", 
-        [deviceId]
-      );
-
-      console.log(`✅ Device ID ${deviceId} berhasil dihapus dari database lokal.`);
-
+    if (result.affectedRows > 0) {
+      console.log(`✅ Berhasil hapus ${result.affectedRows} baris di database lokal.`);
       res.json({
         success: true,
-        message: "Device berhasil dihapus dari sistem dan database.",
+        message: "Device berhasil dihapus secara total.",
       });
     } else {
-      res.status(400).json({
+      console.error("❌ Data tidak ditemukan di database lokal!");
+      res.status(404).json({
         success: false,
-        message: response.data.message || "Gagal menghapus device di StarSender",
+        message: "Data tidak ditemukan di database lokal.",
       });
     }
+
   } catch (err) {
-    console.error("🔥 ERROR DELETE DEVICE:", err.response?.data || err.message);
+    console.error("🔥 Server Error:", err.message);
     res.status(500).json({
       success: false,
-      message: "Terjadi kesalahan pada server saat menghapus device",
-      error: err.message,
+      message: "Terjadi kesalahan server saat menghapus.",
     });
   }
 });
@@ -392,14 +376,62 @@ app.get("/dashboard/stats", async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
-// Endpoint Logout (Memutus Sesi)
-app.post("/device/logout", async (req, res) => {
+
+
+
+// ROUTE RECONNECT (HUBUNGKAN ULANG)
+app.post("/device/reconnect/:id", async (req, res) => {
+  const id = req.params.id;
   try {
-    // Logika StarSender untuk disconnect biasanya via endpoint khusus
-    // Jika tidak ada, kita bisa mengosongkan status di lokal saja
-    res.json({ success: true, message: "Sesi berhasil diputuskan" });
+    const [rows] = await db.promise().query("SELECT device_key FROM devices WHERE id = ?", [id]);
+    if (rows.length === 0) return res.status(404).json({ success: false, message: "ID tidak ada" });
+
+    // Panggil API Reconnect StarSender
+    await axios.post(`https://api.starsender.online/api/devices/${rows[0].device_key}/reconnect`, {}, {
+      headers: { "Authorization": API_KEY_AKUN }
+    });
+
+    res.json({ success: true, message: "Silakan scan ulang QR Code" });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, message: "Gagal menghubungkan ulang" });
+  }
+});
+
+
+
+app.post("/device/reconnect/:id", async (req, res) => {
+  const deviceId = req.params.id;
+
+  try {
+    // 1. Beritahu StarSender untuk menyiapkan sesi pairing baru
+    // Endpoint ini biasanya mengembalikan status 'pairing' atau 'waiting qr'
+    const response = await axios.post(
+      `https://api.starsender.online/api/devices/${deviceId}/reconnect`,
+      {},
+      {
+        headers: {
+          "Authorization": API_KEY_AKUN,
+        },
+      }
+    );
+
+    // 2. Update status di DB lokal agar UI berubah jadi 'disconnected' atau 'pairing'
+    await db.promise().query(
+      "UPDATE devices SET status = 'disconnected' WHERE id = ?", 
+      [deviceId]
+    );
+
+    res.json({
+      success: true,
+      message: "Sesi telah direset. Silakan lakukan scan ulang.",
+      data: response.data // Biasanya berisi data QR jika diperlukan
+    });
+  } catch (err) {
+    console.error("Reconnect Error:", err.response?.data || err.message);
+    res.status(500).json({
+      success: false,
+      message: "Gagal menghubungkan ulang ke server StarSender.",
+    });
   }
 });
 

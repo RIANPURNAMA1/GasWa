@@ -23,6 +23,7 @@ const DeviceStatus: React.FC = () => {
   });
 
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
 
   const handleRefresh = () => {
     setIsRefreshing(true);

@@ -10,10 +10,11 @@ import {
   Trash2,
   Loader2,
   ChevronRight,
+  Activity,
 } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast";
 import Swal from "sweetalert2";
 import withReactContent from "sweetalert2-react-content";
+import toast, { Toaster } from 'react-hot-toast';
 
 const UnifiedDeviceManager: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -22,7 +23,107 @@ const UnifiedDeviceManager: React.FC = () => {
   const [qrBase64, setQrBase64] = useState("");
   const [devices, setDevices] = useState<any[]>([]);
   const [loadingList, setLoadingList] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const MySwal = withReactContent(Swal);
+
+
+const handleRelog = async (deviceId: string | number, deviceName: string) => {
+  const result = await MySwal.fire({
+    title: <p className="text-lg font-bold font-sans">Relog Device?</p>,
+    text: `Sesi pada ${deviceName} akan di-reset. Anda perlu scan ulang.`,
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonColor: "#3b82f6",
+    confirmButtonText: "Ya, Relog",
+    cancelButtonText: "Batal",
+  });
+
+  if (result.isConfirmed) {
+    const toastId = toast.loading(`Mereset sesi ${deviceName}...`);
+    try {
+      const response = await fetch(`http://localhost:3000/device/relog/${deviceId}`, {
+        method: "POST",
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success("Sesi direset! Menampilkan QR...", { id: toastId });
+
+        // --- BAGIAN PENTING AGAR QR MUNCUL ---
+        setName(deviceName); // Set nama untuk polling status
+        setQrBase64(data.qrCode); // Isi state QR dengan data dari backend
+        setScanStatus("scanning"); // Ubah status ke scanning (ini akan nampilkan gambar QR)
+        setIsModalOpen(true); // Buka modalnya
+        
+        fetchAllDevices(); // Refresh list utama
+      } else {
+        toast.error(data.message || "Gagal relog", { id: toastId });
+      }
+    } catch (error) {
+      toast.error("Koneksi server gagal", { id: toastId });
+    }
+  }
+};
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+
+    // Membuat toast loading awal
+    const toastId = toast.loading("Sedang menyinkronkan data...");
+
+    try {
+      const response = await fetch("http://localhost:3000/device/sync");
+      const data = await response.json();
+
+      if (data.success) {
+        // Mengubah toast loading menjadi success
+        toast.success("Sinkronisasi Berhasil!", { id: toastId });
+        fetchAllDevices();
+      } else {
+        // Mengubah toast loading menjadi error dengan pesan dari server
+        toast.error(`Gagal: ${data.message}`, { id: toastId });
+      }
+    } catch (error) {
+      console.error("Sync Error:", error);
+      // Mengubah toast loading menjadi error koneksi
+      toast.error("Terjadi kesalahan koneksi ke server.", { id: toastId });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+
+  const handleLogoutDevice = async (deviceId: number | string, deviceName: string) => {
+    const result = await MySwal.fire({
+      title: <p className="text-lg font-bold">Logout Device?</p>,
+      text: `Sesi WhatsApp pada ${deviceName} akan dihentikan.`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: "#3b82f6", // Biru
+      confirmButtonText: "Ya, Logout",
+      cancelButtonText: "Batal",
+    });
+
+    if (result.isConfirmed) {
+      const toastId = toast.loading(`Memutuskan sesi ${deviceName}...`);
+      try {
+        // Pastikan endpoint backend kamu sesuai (misal: /device/logout/:id)
+        const response = await fetch(`http://localhost:3000/device/logout/${deviceId}`, {
+          method: "POST",
+        });
+        const data = await response.json();
+
+        if (data.success) {
+          toast.success("Berhasil Logout!", { id: toastId });
+          fetchAllDevices(); // Refresh untuk melihat perubahan status
+        } else {
+          toast.error(data.message || "Gagal logout", { id: toastId });
+        }
+      } catch (error) {
+        toast.error("Terjadi kesalahan koneksi.", { id: toastId });
+      }
+    }
+  };
 
   const fetchAllDevices = async () => {
     setLoadingList(true);
@@ -61,75 +162,35 @@ const UnifiedDeviceManager: React.FC = () => {
     }
   };
 
-  // Di dalam komponen Dashboard/Device kamu:
-  const handleDeleteDevice = async (
-    deviceId: number | string,
-    deviceName: string,
-  ) => {
-    // 1. Tampilkan Dialog Konfirmasi
+  const handleDeleteDevice = async (id: number, deviceName: string) => {
     const result = await MySwal.fire({
-      title: <p className="text-lg font-bold">Hapus Device?</p>,
-      html: (
-        <p className="text-sm">
-          Apakah Anda yakin ingin menghapus <b>{deviceName}</b>? Data ini tidak
-          bisa dipulihkan.
-        </p>
-      ),
+      title: "Hapus Device?",
+      text: `Yakin ingin menghapus ${deviceName}?`,
       icon: "warning",
       showCancelButton: true,
-      confirmButtonColor: "#ef4444", // warna merah tailwind
-      cancelButtonColor: "#64748b", // warna slate tailwind
+      confirmButtonColor: "#ef4444",
       confirmButtonText: "Ya, Hapus!",
-      cancelButtonText: "Batal",
-      background: document.documentElement.classList.contains("dark")
-        ? "#0f172a"
-        : "#ffffff",
-      color: document.documentElement.classList.contains("dark")
-        ? "#f1f5f9"
-        : "#1e293b",
     });
 
-    // 2. Jika user menekan "Ya"
     if (result.isConfirmed) {
+      const toastId = toast.loading(`Menghapus ${deviceName}...`);
+
       try {
-        // Tampilkan loading toast saat proses
-        MySwal.fire({
-          title: "Mohon Tunggu...",
-          allowOutsideClick: false,
-          didOpen: () => {
-            Swal.showLoading();
-          },
+        // Pastikan URL mengarah ke ID yang benar
+        const response = await fetch(`http://localhost:3000/device/delete/${id}`, {
+          method: "POST",
         });
 
-        const response = await fetch(
-          `http://localhost:3000/device/delete/${deviceId}`,
-          {
-            method: "POST",
-          },
-        );
         const data = await response.json();
 
         if (data.success) {
-          // Toast Sukses
-          MySwal.fire({
-            icon: "success",
-            title: "Terhapus!",
-            text: "Device berhasil dihapus dari sistem.",
-            timer: 2000,
-            showConfirmButton: false,
-          });
-          fetchAllDevices();
-          // Panggil fungsi refresh list device kamu di sini
-          // Contoh: fetchDevices();
+          toast.success("Berhasil dihapus!", { id: toastId });
+          fetchAllDevices(); // Refresh list setelah hapus
         } else {
-          throw new Error(data.message);
+          toast.error(data.message, { id: toastId });
         }
-      } catch (err: any) {
-        MySwal.fire({
-          icon: "error",
-          title: "Gagal!",
-          text: err.message || "Terjadi kesalahan koneksi.",
-        });
+      } catch (error) {
+        toast.error("Koneksi gagal", { id: toastId });
       }
     }
   };
@@ -222,7 +283,40 @@ const UnifiedDeviceManager: React.FC = () => {
         </div>
       </header>
 
+      {/* Filter Controls Area */}
+      <div className="flex flex-col md:flex-row items-center gap-4">
+
+
+
+        {/* Dropdown Device (Kode lama kamu) */}
+        <div className="relative">
+          {/* ... select device ... */}
+        </div>
+
+        {/* Filter Waktu (Kode lama kamu) */}
+        <div className="flex bg-white dark:bg-slate-900/60 p-1 rounded-lg ...">
+          {/* ... filter buttons ... */}
+        </div>
+      </div>
+
       <div className="max-w-4xl mx-auto px-6 py-8">
+        {/* TOMBOL SYNC BARU */}
+        <button
+          onClick={handleSync}
+          disabled={isSyncing}
+          className={`mb-5 flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all shadow-sm border ${isSyncing
+            ? "bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 cursor-not-allowed"
+            : "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-900/50 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+            }`}
+        >
+          {isSyncing ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Activity size={14} />
+          )}
+          {isSyncing ? "Syncing..." : "Sync Devices"}
+        </button>
+        
         {/* LIST DEVICE (Flat Design) */}
         <div className="space-y-1">
           {loadingList ? (
@@ -241,11 +335,10 @@ const UnifiedDeviceManager: React.FC = () => {
                 {/* Icon & Name */}
                 <div className="flex items-center gap-4 flex-1">
                   <div
-                    className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-                      device.status === "Connected"
-                        ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
-                        : "bg-slate-100 text-slate-400 dark:bg-slate-800"
-                    }`}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 transition-colors ${device.status === "Connected"
+                      ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                      : "bg-slate-100 text-slate-400 dark:bg-slate-800"
+                      }`}
                   >
                     <Smartphone size={24} />
                   </div>
@@ -295,6 +388,7 @@ const UnifiedDeviceManager: React.FC = () => {
                 {/* Actions */}
                 <div className="flex items-center gap-2">
                   <button
+                   onClick={() => handleRelog(device.id, device.device_name)}
                     className="p-2 text-slate-400 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
                     title="Relog"
                   >
