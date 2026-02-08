@@ -1,35 +1,111 @@
+// ==========================================
+// 🔧 LOAD ENV (HARUS PALING ATAS)
+// ==========================================
+require("dotenv").config();
+
+// Debug (boleh hapus setelah yakin)
+console.log("JWT_SECRET:", process.env.JWT_SECRET);
+
+// ==========================================
+// 📦 IMPORT
+// ==========================================
 const express = require("express");
 const axios = require("axios");
-const bodyParser = require("body-parser");
 const cors = require("cors");
 const db = require("./config/db");
-const authRoutes = require('./routes/authRoutes');
-
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcrypt");
 
 // ==========================================
 // 🔧 CONFIGURATION
 // ==========================================
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+
 const API_KEY_AKUN = "f272bd85-1ea1-4bcc-9d88-b585b2bda634";
 const WEBHOOK_URL_BASE = "https://aulic-pyridic-jaylen.ngrok-free.dev/webhook";
 
 // ==========================================
 // 🔧 MIDDLEWARE
 // ==========================================
-app.use(bodyParser.json());
-app.use(cors({ origin: "*", methods: ["GET", "POST"] }));
-// ... middleware lainnya (cors, json, db)
-app.use('/api', authRoutes);
+// ❌ body-parser sudah deprecated
+// ✅ pakai bawaan Express
+app.use(express.json());
+
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+}));
 
 // ==========================================
-// 🛠️ UTILITY FUNCTIONS
+// 🔐 LOGIN AUTH (TANPA CONTROLLER & ROUTE)
 // ==========================================
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+app.post("/auth/login", async (req, res) => {
+  const { email, password } = req.body;
 
-// ==========================================
-// 📊 DASHBOARD ROUTES
-// ==========================================
+  // validasi
+  if (!email || !password) {
+    return res.status(400).json({
+      success: false,
+      message: "Email dan password wajib diisi",
+    });
+  }
+
+  try {
+    // ambil user dari DB
+    const [rows] = await db
+      .promise()
+      .query("SELECT * FROM users WHERE email = ? LIMIT 1", [email]);
+
+    if (rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: "Email atau password salah",
+      });
+    }
+
+    const user = rows[0];
+
+    // cek password hash
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Email atau password salah",
+      });
+    }
+
+    // generate token
+    const token = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        role: user.role || "user",
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
+
+    // response
+    res.json({
+      success: true,
+      message: "Login berhasil",
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role || "user",
+      },
+    });
+  } catch (err) {
+    console.error("❌ Login Error:", err.message);
+    res.status(500).json({
+      success: false,
+      message: "Terjadi kesalahan server",
+    });
+  }
+});
 
 /**
  * GET /dashboard/stats
@@ -559,6 +635,76 @@ app.get("/all", (req, res) => {
     }
     res.json(results);
   });
+});
+
+/**
+ * POST /api/send
+ * Khusus untuk Fitur "Compose" di Frontend
+ * Mengambil device pertama yang 'connected' secara otomatis
+ */
+app.post("/api/send", async (req, res) => {
+  const { number, message } = req.body;
+
+  // 1. Validasi Input
+  if (!number || !message) {
+    return res.status(400).json({ 
+      success: false, 
+      error: "Nomor tujuan dan isi pesan tidak boleh kosong." 
+    });
+  }
+
+  try {
+    // 2. Ambil Device yang sedang 'connected' dari database
+    const [devices] = await db.promise().query(
+      "SELECT device_key, device_name FROM devices WHERE status = 'connected' LIMIT 1"
+    );
+
+    if (devices.length === 0) {
+      return res.status(503).json({ 
+        success: false, 
+        error: "Tidak ada WhatsApp Device yang terhubung. Mohon hubungkan device terlebih dahulu." 
+      });
+    }
+
+    const { device_key, device_name } = devices[0];
+
+    // 3. Kirim ke API StarSender
+    const response = await axios.post(
+      "https://api.starsender.online/api/send",
+      {
+        messageType: "text",
+        to: number,
+        body: message,
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: device_key, // Menggunakan device_key yang aktif
+        },
+      }
+    );
+
+    // 4. Simpan ke Database sebagai pesan keluar (is_me = 1)
+    await db.promise().query(
+      `INSERT INTO messages 
+       (device_key, device_name, sender, message_text, is_me, received_at) 
+       VALUES (?, ?, ?, ?, 1, NOW())`,
+      [device_key, device_name, number, message]
+    );
+
+    // 5. Kirim respon sukses ke FE
+    res.status(200).json({ 
+      success: true, 
+      message: "Pesan berhasil dikirim via " + device_name 
+    });
+
+  } catch (err) {
+    console.error("🔥 Error Compose Send:", err.response?.data || err.message);
+    res.status(500).json({ 
+      success: false, 
+      error: "Gagal mengirim pesan melalui provider." 
+    });
+  }
 });
 
 /**

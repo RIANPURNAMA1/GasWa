@@ -19,6 +19,8 @@ import DeviceStatus from "./features/DeviceStatus";
 import QRScanner from "./features/QRScanner";
 import ContactsView from "./features/ContactsView";
 import Login from "./auth/Login";
+import ProtectedRoute from "./routes/ProtectedRoute";
+import GuestRoute from "./routes/GuestRoute";
 
 const AppContent = () => {
   const location = useLocation();
@@ -38,23 +40,35 @@ const AppContent = () => {
       )}
 
       <Routes>
-        <Route path="/" element={<LayoutDashboard />}>
+        {/* 🔒 DASHBOARD (HARUS LOGIN) */}
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <LayoutDashboard />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<DashboardView />} />
           <Route path="inbox" element={<InboxView />} />
           <Route path="send" element={<KirimPesan />} />
-          {/* Route baru untuk halaman Chat Riwayat */}
           <Route path="chat" element={<ChatView />} />
           <Route path="device" element={<DeviceStatus />} />
           <Route path="add-device" element={<QRScanner />} />
           <Route path="contacts" element={<ContactsView />} />
-          <Route
-            path="contacts"
-            element={<div className="p-10">Halaman Kontak</div>}
-          />
         </Route>
 
-        <Route path="/login" element={<Login/>} />
-        <Route path="*" element={<Navigate to="/" />} />
+        {/* 🚫 LOGIN (TIDAK BISA DIAKSES JIKA SUDAH LOGIN) */}
+        <Route
+          path="/login"
+          element={
+            <GuestRoute>
+              <Login />
+            </GuestRoute>
+          }
+        />
+
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   );
