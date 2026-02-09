@@ -32,10 +32,12 @@ const WEBHOOK_URL_BASE = "https://aulic-pyridic-jaylen.ngrok-free.dev/webhook";
 // ✅ pakai bawaan Express
 app.use(express.json());
 
-app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST", "PUT", "DELETE"],
-}));
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE"],
+  }),
+);
 
 // ==========================================
 // 🔐 LOGIN AUTH (TANPA CONTROLLER & ROUTE)
@@ -83,7 +85,7 @@ app.post("/auth/login", async (req, res) => {
         role: user.role || "user",
       },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" }
+      { expiresIn: "1d" },
     );
 
     // response
@@ -151,7 +153,7 @@ app.get("/dashboard/stats", async (req, res) => {
         FROM messages
         WHERE is_me = 0 ${deviceCondition}
         GROUP BY sender
-        HAVING MIN(received_at) ${timeCondition.includes('CURDATE()') ? ">= CURDATE()" : ">= DATE_SUB(NOW(), INTERVAL 30 DAY)"}
+        HAVING MIN(received_at) ${timeCondition.includes("CURDATE()") ? ">= CURDATE()" : ">= DATE_SUB(NOW(), INTERVAL 30 DAY)"}
       ) as subquery_leads
     `);
 
@@ -217,7 +219,7 @@ app.get("/dashboard/stats", async (req, res) => {
     // Query 8: Ambil data device dari StarSender API
     const response = await axios.get(
       "https://api.starsender.online/api/devices",
-      { headers: { Authorization: API_KEY_AKUN } }
+      { headers: { Authorization: API_KEY_AKUN } },
     );
     const allDevices = response.data.data.devices || [];
 
@@ -229,7 +231,8 @@ app.get("/dashboard/stats", async (req, res) => {
         pesanMasukToday: incomingToday[0].totalToday || 0,
         pesanKeluar: msgRows[0].pesanKeluar || 0,
         totalDevice: allDevices.length,
-        deviceConnected: allDevices.filter((d) => d.status === "connected").length,
+        deviceConnected: allDevices.filter((d) => d.status === "connected")
+          .length,
         leadMasuk: leadRows[0].totalLeads || 0,
         leadAktif: liveChatRows[0].liveCount || 0,
         slowResponse: slowResponseRows[0].slowCount || 0,
@@ -242,6 +245,156 @@ app.get("/dashboard/stats", async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
+// ==========================================
+// 📇 CONTACT MANAGEMENT ROUTES
+// ==========================================
+
+/**
+ * POST /api/contacts/create
+ * Membuat kontak baru di database Starsender
+ */
+app.post("/api/contacts/create", async (req, res) => {
+  const { name, number, groupId, variables } = req.body;
+
+  // Validasi input
+  if (!name || !number) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "Nama dan Nomor wajib diisi" 
+    });
+  }
+
+  try {
+    // Bersihkan nomor (menghapus karakter selain angka)
+    const cleanNumber = number.toString().replace(/\D/g, "");
+
+    const response = await axios.post(
+      "https://api.starsender.online/api/contacts",
+      {
+        name: name,
+        number: cleanNumber,
+        group_id: groupId || null, // Optional
+        variabel: variables || []  // Optional, harus array
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": API_KEY_AKUN // GUNAKAN ACCOUNT KEY
+        }
+      }
+    );
+
+    res.json({
+      success: true,
+      message: "Kontak berhasil disimpan ke Starsender",
+      data: response.data
+    });
+
+  } catch (err) {
+    const errorDetail = err.response?.data || err.message;
+    console.error("❌ Create Contact Error:", errorDetail);
+
+    res.status(500).json({
+      success: false,
+      message: "Gagal membuat kontak",
+      detail: errorDetail
+    });
+  }
+});
+
+
+/**
+ * GET /api/contacts/groups
+ * Mengambil daftar grup kontak untuk ditampilkan di dropdown/select
+ */
+/**
+ * GET /api/contacts/groups
+ * Mengambil list group kontak sesuai dokumentasi Starsender
+ */
+app.get("/api/contacts/groups", async (req, res) => {
+  try {
+    console.log("📂 Mengambil List Group Kontak menggunakan Account Key...");
+
+    const response = await axios({
+      method: 'get',
+      url: 'https://api.starsender.online/api/groups', // Sesuai dokumentasi
+      headers: { 
+        'Authorization': API_KEY_AKUN, // WAJIB Account API Key (dari Profile)
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log("✅ Respon Starsender:", response.data);
+
+    res.json({
+      success: true,
+      message: "Berhasil mengambil list group kontak",
+      data: response.data.data || []
+    });
+
+  } catch (err) {
+    const errorDetail = err.response?.data || err.message;
+    console.error("❌ Gagal List Group Kontak:", errorDetail);
+
+    res.status(500).json({ 
+      success: false, 
+      message: "Gagal mengambil daftar grup kontak",
+      detail: errorDetail 
+    });
+  }
+});
+
+
+/**
+ * GET /api/whatsapp/groups
+ * Mengambil daftar grup WhatsApp asli dari HP (bukan grup kontak)
+ */
+app.get("/api/whatsapp/groups", async (req, res) => {
+  try {
+    // 1. Ambil device yang statusnya 'connected'
+    const [rows] = await db.promise().query(
+      "SELECT device_key, device_name FROM devices WHERE status = 'connected' LIMIT 1"
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Tidak ada device yang terhubung. Silakan scan QR dahulu."
+      });
+    }
+
+    const deviceKey = rows[0].device_key;
+    console.log(`📡 Meminta list grup WA untuk device: ${rows[0].device_name}`);
+
+    // 2. Panggil API sesuai dokumentasi yang kamu kirim
+    const response = await axios.get("https://api.starsender.online/api/whatsapp/groups", {
+      headers: {
+        "Authorization": deviceKey, // Wajib Device Key
+        "Content-Type": "application/json"
+      }
+    });
+
+    res.json({
+      success: true,
+      message: "Daftar grup WhatsApp berhasil diambil",
+      data: response.data.data || []
+    });
+
+  } catch (err) {
+    const errorDetail = err.response?.data || err.message;
+    console.error("❌ Gagal ambil grup WA:", errorDetail);
+
+    res.status(500).json({
+      success: false,
+      message: "Gagal mengambil daftar grup WA",
+      detail: errorDetail
+    });
+  }
+});
+
+
+
 
 // ==========================================
 // 📱 DEVICE MANAGEMENT ROUTES
@@ -270,13 +423,14 @@ app.post("/device/add-scan", async (req, res) => {
           "Content-Type": "application/json",
           Authorization: API_KEY_AKUN,
         },
-      }
+      },
     );
 
     console.log("⭐ RESPONSE QR:", response.data);
 
     const starData = response.data.data || {};
-    const qrCode = starData.kode_gambar || starData.qr || starData.qrcode || null;
+    const qrCode =
+      starData.kode_gambar || starData.qr || starData.qrcode || null;
 
     if (!qrCode) {
       return res.status(500).json({
@@ -307,7 +461,7 @@ app.get("/device/sync", async (req, res) => {
   try {
     const response = await axios.get(
       "https://api.starsender.online/api/devices",
-      { headers: { Authorization: API_KEY_AKUN } }
+      { headers: { Authorization: API_KEY_AKUN } },
     );
 
     const devices = response.data.data?.devices || response.data.data || [];
@@ -318,7 +472,7 @@ app.get("/device/sync", async (req, res) => {
       const phone = dev.no_hp || dev.phone || dev.phone_number || null;
       const serverId = dev.server_id || dev.server || null;
       const rawStatus = String(dev.status || "").toLowerCase();
-      const status = 
+      const status =
         rawStatus === "connected" || rawStatus === "ready"
           ? "connected"
           : "disconnected";
@@ -327,7 +481,7 @@ app.get("/device/sync", async (req, res) => {
 
       // Set webhook otomatis
       const autoWebhookUrl = `${WEBHOOK_URL_BASE}?name=${encodeURIComponent(deviceName)}`;
-      
+
       try {
         await axios.post(
           "https://api.starsender.online/api/devices/update",
@@ -335,7 +489,7 @@ app.get("/device/sync", async (req, res) => {
             device_key: deviceKey,
             webhook: autoWebhookUrl,
           },
-          { headers: { Authorization: API_KEY_AKUN } }
+          { headers: { Authorization: API_KEY_AKUN } },
         );
         console.log(`✅ Webhook otomatis diatur untuk: ${deviceName}`);
       } catch (err) {
@@ -351,7 +505,7 @@ app.get("/device/sync", async (req, res) => {
            phone_number = VALUES(phone_number),
            status = VALUES(status),
            server_id = VALUES(server_id)`,
-        [deviceKey, deviceName, phone, status, serverId]
+        [deviceKey, deviceName, phone, status, serverId],
       );
     }
 
@@ -370,7 +524,7 @@ app.get("/device/all", async (req, res) => {
   try {
     const response = await axios.get(
       "https://api.starsender.online/api/devices",
-      { headers: { Authorization: API_KEY_AKUN } }
+      { headers: { Authorization: API_KEY_AKUN } },
     );
 
     const deviceArray = response.data.data.devices || [];
@@ -396,16 +550,16 @@ app.get("/device/all", async (req, res) => {
  */
 app.get("/device/status", async (req, res) => {
   const { name } = req.query;
-  
+
   try {
     const response = await axios.get(
       "https://api.starsender.online/api/devices",
-      { headers: { Authorization: API_KEY_AKUN } }
+      { headers: { Authorization: API_KEY_AKUN } },
     );
 
     const devices = response.data.data.devices;
     const currentDevice = devices.find(
-      (d) => d.name === name && d.status === "connected"
+      (d) => d.name === name && d.status === "connected",
     );
 
     if (currentDevice) {
@@ -438,7 +592,7 @@ app.post("/device/delete/:id", async (req, res) => {
             "Content-Type": "application/json",
             Authorization: API_KEY_AKUN,
           },
-        }
+        },
       );
       console.log("✅ Terhapus di StarSender Cloud");
     } catch (apiErr) {
@@ -451,7 +605,9 @@ app.post("/device/delete/:id", async (req, res) => {
       .query("DELETE FROM devices WHERE id = ?", [deviceId]);
 
     if (result.affectedRows > 0) {
-      console.log(`✅ Berhasil hapus ${result.affectedRows} baris di database lokal.`);
+      console.log(
+        `✅ Berhasil hapus ${result.affectedRows} baris di database lokal.`,
+      );
       res.json({
         success: true,
         message: "Device berhasil dihapus secara total.",
@@ -484,11 +640,11 @@ app.post("/device/reconnect/:id", async (req, res) => {
     const [rows] = await db
       .promise()
       .query("SELECT device_key FROM devices WHERE id = ?", [deviceId]);
-    
+
     if (rows.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Device tidak ditemukan" 
+      return res.status(404).json({
+        success: false,
+        message: "Device tidak ditemukan",
       });
     }
 
@@ -498,13 +654,15 @@ app.post("/device/reconnect/:id", async (req, res) => {
     const response = await axios.post(
       `https://api.starsender.online/api/devices/${deviceKey}/reconnect`,
       {},
-      { headers: { Authorization: API_KEY_AKUN } }
+      { headers: { Authorization: API_KEY_AKUN } },
     );
 
     // Update status di database lokal
     await db
       .promise()
-      .query("UPDATE devices SET status = 'disconnected' WHERE id = ?", [deviceId]);
+      .query("UPDATE devices SET status = 'disconnected' WHERE id = ?", [
+        deviceId,
+      ]);
 
     res.json({
       success: true,
@@ -530,12 +688,14 @@ app.post("/device/reconnect/:id", async (req, res) => {
  */
 app.get("/api/messages/history", async (req, res) => {
   const { sender } = req.query;
-  
+
   try {
     const [rows] = await db
       .promise()
-      .query("SELECT * FROM messages WHERE sender = ? ORDER BY id ASC", [sender]);
-    
+      .query("SELECT * FROM messages WHERE sender = ? ORDER BY id ASC", [
+        sender,
+      ]);
+
     res.json({ success: true, data: rows });
   } catch (err) {
     console.error("Message History Error:", err.message);
@@ -647,22 +807,25 @@ app.post("/api/send", async (req, res) => {
 
   // 1. Validasi Input
   if (!number || !message) {
-    return res.status(400).json({ 
-      success: false, 
-      error: "Nomor tujuan dan isi pesan tidak boleh kosong." 
+    return res.status(400).json({
+      success: false,
+      error: "Nomor tujuan dan isi pesan tidak boleh kosong.",
     });
   }
 
   try {
     // 2. Ambil Device yang sedang 'connected' dari database
-    const [devices] = await db.promise().query(
-      "SELECT device_key, device_name FROM devices WHERE status = 'connected' LIMIT 1"
-    );
+    const [devices] = await db
+      .promise()
+      .query(
+        "SELECT device_key, device_name FROM devices WHERE status = 'connected' LIMIT 1",
+      );
 
     if (devices.length === 0) {
-      return res.status(503).json({ 
-        success: false, 
-        error: "Tidak ada WhatsApp Device yang terhubung. Mohon hubungkan device terlebih dahulu." 
+      return res.status(503).json({
+        success: false,
+        error:
+          "Tidak ada WhatsApp Device yang terhubung. Mohon hubungkan device terlebih dahulu.",
       });
     }
 
@@ -681,7 +844,7 @@ app.post("/api/send", async (req, res) => {
           "Content-Type": "application/json",
           Authorization: device_key, // Menggunakan device_key yang aktif
         },
-      }
+      },
     );
 
     // 4. Simpan ke Database sebagai pesan keluar (is_me = 1)
@@ -689,20 +852,19 @@ app.post("/api/send", async (req, res) => {
       `INSERT INTO messages 
        (device_key, device_name, sender, message_text, is_me, received_at) 
        VALUES (?, ?, ?, ?, 1, NOW())`,
-      [device_key, device_name, number, message]
+      [device_key, device_name, number, message],
     );
 
     // 5. Kirim respon sukses ke FE
-    res.status(200).json({ 
-      success: true, 
-      message: "Pesan berhasil dikirim via " + device_name 
+    res.status(200).json({
+      success: true,
+      message: "Pesan berhasil dikirim via " + device_name,
     });
-
   } catch (err) {
     console.error("🔥 Error Compose Send:", err.response?.data || err.message);
-    res.status(500).json({ 
-      success: false, 
-      error: "Gagal mengirim pesan melalui provider." 
+    res.status(500).json({
+      success: false,
+      error: "Gagal mengirim pesan melalui provider.",
     });
   }
 });
@@ -719,7 +881,8 @@ app.post("/api/send-message", async (req, res) => {
     console.error("❌ Data tidak lengkap dari FE:", req.body);
     return res.status(400).json({
       success: false,
-      message: "Data tidak lengkap. Pastikan field: to, message, dan deviceKey terisi.",
+      message:
+        "Data tidak lengkap. Pastikan field: to, message, dan deviceKey terisi.",
     });
   }
 
@@ -730,11 +893,12 @@ app.post("/api/send-message", async (req, res) => {
     // Ambil nama device dari database
     const [deviceRows] = await db
       .promise()
-      .query("SELECT device_name FROM devices WHERE device_key = ?", [deviceKey]);
+      .query("SELECT device_name FROM devices WHERE device_key = ?", [
+        deviceKey,
+      ]);
 
-    const deviceName = deviceRows.length > 0 
-      ? deviceRows[0].device_name 
-      : "Unknown Device";
+    const deviceName =
+      deviceRows.length > 0 ? deviceRows[0].device_name : "Unknown Device";
 
     // Kirim ke API StarSender
     console.log(`📤 Mengirim pesan ke ${cleanTo} via ${deviceName}...`);
@@ -751,7 +915,7 @@ app.post("/api/send-message", async (req, res) => {
           "Content-Type": "application/json",
           Authorization: deviceKey,
         },
-      }
+      },
     );
 
     // Simpan ke database
@@ -804,11 +968,13 @@ app.post("/webhook", async (req, res) => {
       .promise()
       .query(
         "SELECT device_key, device_name FROM devices WHERE device_name = ?",
-        [deviceNameFromQuery]
+        [deviceNameFromQuery],
       );
 
     if (rows.length === 0) {
-      console.error(`❌ Device [${deviceNameFromQuery}] tidak terdaftar di database lokal.`);
+      console.error(
+        `❌ Device [${deviceNameFromQuery}] tidak terdaftar di database lokal.`,
+      );
       return res.status(404).send("Device not found in database");
     }
 
@@ -819,7 +985,7 @@ app.post("/webhook", async (req, res) => {
     await db.promise().query(
       `INSERT INTO messages (sender, message_text, is_me, device_key, device_name, received_at) 
        VALUES (?, ?, ?, ?, ?, NOW())`,
-      [pengirim, isiPesan, 0, finalKey, finalName]
+      [pengirim, isiPesan, 0, finalKey, finalName],
     );
 
     console.log(`✅ Pesan Berhasil Disimpan! Via: ${finalName}`);
@@ -863,9 +1029,9 @@ app.get("/api/contacts", async (req, res) => {
     });
   } catch (err) {
     console.error("Get Contacts Error:", err.message);
-    res.status(500).json({ 
-      success: false, 
-      message: "Gagal mengambil data kontak" 
+    res.status(500).json({
+      success: false,
+      message: "Gagal mengambil data kontak",
     });
   }
 });
@@ -890,9 +1056,9 @@ app.post("/api/contacts", async (req, res) => {
       .promise()
       .query(
         "INSERT INTO contacts (name, phone, status, initials) VALUES (?, ?, ?, ?)",
-        [name, phone, status || "Offline", initials]
+        [name, phone, status || "Offline", initials],
       );
-    
+
     res.json({ success: true, message: "Kontak berhasil ditambahkan" });
   } catch (err) {
     console.error("Add Contact Error:", err.message);
@@ -916,7 +1082,7 @@ app.get("/api/labels", async (req, res) => {
     const [rows] = await db
       .promise()
       .query("SELECT * FROM labels ORDER BY name ASC");
-    
+
     res.json({ success: true, data: rows });
   } catch (err) {
     console.error("Get Labels Error:", err.message);
@@ -930,11 +1096,11 @@ app.get("/api/labels", async (req, res) => {
  */
 app.post("/api/labels", async (req, res) => {
   const { name } = req.body;
-  
+
   if (!name) {
-    return res.status(400).json({ 
-      success: false, 
-      message: "Nama label wajib diisi" 
+    return res.status(400).json({
+      success: false,
+      message: "Nama label wajib diisi",
     });
   }
 
@@ -942,7 +1108,7 @@ app.post("/api/labels", async (req, res) => {
     const [result] = await db
       .promise()
       .query("INSERT INTO labels (name) VALUES (?)", [name]);
-    
+
     res.json({
       success: true,
       message: "Label berhasil dibuat",
@@ -950,9 +1116,9 @@ app.post("/api/labels", async (req, res) => {
     });
   } catch (err) {
     if (err.code === "ER_DUP_ENTRY") {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Label sudah ada" 
+      return res.status(400).json({
+        success: false,
+        message: "Label sudah ada",
       });
     }
     console.error("Add Label Error:", err.message);
@@ -966,7 +1132,7 @@ app.post("/api/labels", async (req, res) => {
  */
 app.delete("/api/labels/:id", async (req, res) => {
   const { id } = req.params;
-  
+
   try {
     await db.promise().query("DELETE FROM labels WHERE id = ?", [id]);
     res.json({ success: true, message: "Label berhasil dihapus" });
@@ -1005,11 +1171,11 @@ app.get("/api/labels/assignments", async (req, res) => {
  */
 app.post("/api/labels/assign", async (req, res) => {
   const { sender, label } = req.body;
-  
+
   if (!sender) {
-    return res.status(400).json({ 
-      success: false, 
-      message: "Sender wajib diisi" 
+    return res.status(400).json({
+      success: false,
+      message: "Sender wajib diisi",
     });
   }
 
@@ -1019,10 +1185,10 @@ app.post("/api/labels/assign", async (req, res) => {
       await db
         .promise()
         .query("DELETE FROM sender_labels WHERE sender = ?", [sender]);
-      
-      return res.json({ 
-        success: true, 
-        message: "Label dilepas dari nomor" 
+
+      return res.json({
+        success: true,
+        message: "Label dilepas dari nomor",
       });
     }
 
@@ -1032,7 +1198,7 @@ app.post("/api/labels/assign", async (req, res) => {
       VALUES (?, ?) 
       ON DUPLICATE KEY UPDATE label_name = VALUES(label_name)
     `;
-    
+
     await db.promise().query(query, [sender, label]);
     res.json({ success: true, message: "Label berhasil ditugaskan" });
   } catch (err) {
