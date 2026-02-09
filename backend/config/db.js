@@ -1,15 +1,31 @@
 const mysql = require("mysql2");
 
-const db = mysql.createConnection({
+// CREATE POOL (WAJIB untuk server production)
+const db = mysql.createPool({
   host: "localhost",
   user: "root",
   password: "",
   database: "wa_gateway",
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
 });
 
-const initDatabase = async () => {
+// TEST KONEKSI
+(async () => {
+  try {
+    const connection = await db.promise().getConnection();
+    console.log("✅ MySQL Pool Connected");
+    connection.release();
+    await initDatabase();
+  } catch (err) {
+    console.error("❌ MySQL Connection Failed:", err.message);
+  }
+})();
+
+// INIT DATABASE & TABLE
+async function initDatabase() {
   const tables = [
-    // TABEL USERS: Untuk Fitur Login
     `CREATE TABLE IF NOT EXISTS users (
       id INT AUTO_INCREMENT PRIMARY KEY,
       username VARCHAR(100),
@@ -28,7 +44,6 @@ const initDatabase = async () => {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`,
 
-    // TABEL MESSAGES: Tambahkan is_read (untuk notif)
     `CREATE TABLE IF NOT EXISTS messages (
       id INT AUTO_INCREMENT PRIMARY KEY,
       device_key VARCHAR(255),
@@ -36,7 +51,7 @@ const initDatabase = async () => {
       sender VARCHAR(50),
       message_text TEXT,
       is_me TINYINT(1) DEFAULT 0,
-      is_read TINYINT(1) DEFAULT 0, 
+      is_read TINYINT(1) DEFAULT 0,
       message_type VARCHAR(20) DEFAULT 'text',
       received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`,
@@ -60,32 +75,17 @@ const initDatabase = async () => {
       sender VARCHAR(50) PRIMARY KEY,
       label_name VARCHAR(100),
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    )`
+    )`,
   ];
 
   try {
-    for (let query of tables) {
+    for (const query of tables) {
       await db.promise().query(query);
     }
-    
-    // BACKWARD COMPATIBILITY: 
-    // Cek jika kolom is_read belum ada di tabel messages (jika tabel sudah terlanjur dibuat)
-    const [cols] = await db.promise().query("SHOW COLUMNS FROM messages LIKE 'is_read'");
-    if (cols.length === 0) {
-      await db.promise().query("ALTER TABLE messages ADD COLUMN is_read TINYINT(1) DEFAULT 0 AFTER is_me");
-      console.log("✅ Kolom is_read ditambahkan ke tabel messages");
-    }
-
-    console.log("✅ Database & Tabel Siap (Termasuk Tabel User & Notif)");
+    console.log("✅ Semua tabel siap");
   } catch (err) {
-    console.error("❌ Gagal Inisialisasi Tabel:", err.message);
+    console.error("❌ Gagal inisialisasi tabel:", err.message);
   }
-};
-
-db.connect((err) => {
-  if (err) return console.error("❌ DB Error:", err.message);
-  console.log("✅ Terkoneksi MySQL");
-  initDatabase();
-});
+}
 
 module.exports = db;
